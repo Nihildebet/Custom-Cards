@@ -1,0 +1,86 @@
+local s,id=GetID()
+
+function s.initial_effect(c)
+    --Activate
+    local e1=Effect.CreateEffect(c)
+    e1:SetType(EFFECT_TYPE_ACTIVATE)
+    e1:SetCode(EVENT_FREE_CHAIN)
+    c:RegisterEffect(e1)
+
+    --Tribute Summon Gemini using opponent's cards
+    local e2=Effect.CreateEffect(c)
+    e2:SetType(EFFECT_TYPE_FIELD)
+    e2:SetCode(EFFECT_SUMMON_PROC)
+    e2:SetRange(LOCATION_FZONE)
+    e2:SetTargetRange(LOCATION_HAND,0)
+    e2:SetCondition(s.sumcon)
+    e2:SetTarget(aux.FieldSummonProcTg(s.otg,s.sumtg))
+    e2:SetOperation(s.sumop)
+    e2:SetValue(SUMMON_TYPE_TRIBUTE)
+    c:RegisterEffect(e2)
+end
+
+function s.otg(e,c)
+    if c==nil then return true end
+    return c:IsType(TYPE_GEMINI)
+end
+
+
+
+
+function s.sumcon(e,c,minc)
+    if c==nil then return true end
+
+    if not c:IsType(TYPE_GEMINI) then
+        return false
+    end
+
+    local tp=c:GetControler()
+
+    return Duel.GetLocationCount(tp,LOCATION_MZONE)>-1
+        and Duel.IsExistingMatchingCard(
+            s.tgfilter,
+            tp,0,LOCATION_ONFIELD,
+            1,nil,e
+        )
+end
+
+function s.tgfilter(c,e)
+    return not c:IsImmuneToEffect(e)
+end
+
+function s.sumtg(e,tp,eg,ep,ev,re,r,rp,chk,c,minc,zone,relzone,exeff)
+    local mi,ma=c:GetTributeRequirement()
+
+    local mg=Duel.GetMatchingGroup(
+        s.tgfilter,
+        tp,0,LOCATION_ONFIELD,nil,e
+    )
+
+    if #mg<mi then
+        return false
+    end
+
+    Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_RELEASE)
+
+    local sg=mg:Select(tp,mi,mi,true,nil)
+
+    if not sg then
+        return false
+    end
+
+    sg:KeepAlive()
+    e:SetLabelObject(sg)
+
+    return true
+end
+
+function s.sumop(e,tp,eg,ep,ev,re,r,rp,c,minc,zone,relzone,exeff)
+    local sg=e:GetLabelObject()
+    if not sg then return end
+
+    c:SetMaterial(sg)
+    Duel.Release(sg,REASON_SUMMON+REASON_MATERIAL)
+
+    sg:DeleteGroup()
+end
