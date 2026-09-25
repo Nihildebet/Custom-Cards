@@ -1,0 +1,122 @@
+-- Custom Gemini Monster (Extra Deck Rip / Continuous Trap Converter)
+local s,id=GetID()
+function s.initial_effect(c)
+	-- Inisialisasi Prosedur Gemini
+	Gemini.AddProcedure(c)
+
+	-- 1. Special Summon dari tangan dengan menaruh 1 Gemini dari Deck ke S/T Zone sebagai Continuous Trap
+	local e1=Effect.CreateEffect(c)
+	e1:SetDescription(aux.Stringid(id,0))
+	e1:SetType(EFFECT_TYPE_FIELD)
+	e1:SetCode(EFFECT_SPSUMMON_PROC)
+	e1:SetProperty(EFFECT_FLAG_UNCOPYABLE)
+	e1:SetRange(LOCATION_HAND)
+	e1:SetCondition(s.hspcon)
+	e1:SetOperation(s.hspop)
+	c:RegisterEffect(e1)
+
+	-- 2. Efek Gemini (Bounce 2 Gemini Monster Card -> Pindahkan 1 Monster dari Extra Deck Lawan ke S/T Zone)
+	local e2=Effect.CreateEffect(c)
+	e2:SetDescription(aux.Stringid(id,1))
+	e2:SetCategory(CATEGORY_TOHAND)
+	e2:SetType(EFFECT_TYPE_IGNITION)
+	e2:SetRange(LOCATION_MZONE)
+	e2:SetCountLimit(1,id) -- Hard Once Per Turn (HOPT)
+	e2:SetCondition(Gemini.EffectStatusCondition)
+	e2:SetCost(s.geminicost)
+	e2:SetTarget(s.geminitg)
+	e2:SetOperation(s.geminiop)
+	c:RegisterEffect(e2)
+end
+
+-- Filter untuk mengecek keberadaan Gemini Monster Card di lapangan (Monster Zone atau S/T Zone)
+function s.gemini_card_filter(c)
+	return c:IsFaceup() and c:IsType(TYPE_GEMINI)
+end
+
+-- Filter untuk monster Gemini di Deck yang bisa ditaruh di S/T Zone
+function s.deck_gemini_filter(c)
+	return c:IsType(TYPE_GEMINI) and not c:IsForbidden()
+end
+
+-- =========================================================
+-- EFEK 1: Special Summon Prosedur dari Tangan
+-- =========================================================
+function s.hspcon(e,c)
+	if c==nil then return true end
+	local tp=c:GetControler()
+	return Duel.GetLocationCount(tp,LOCATION_MZONE)>0
+		and Duel.GetLocationCount(tp,LOCATION_SZONE)>0
+		and Duel.IsExistingMatchingCard(s.gemini_card_filter,tp,LOCATION_ONFIELD,0,1,nil)
+		and Duel.IsExistingMatchingCard(s.deck_gemini_filter,tp,LOCATION_DECK,0,1,nil)
+end
+
+function s.hspop(e,tp,eg,ep,ev,re,r,rp,c)
+	Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_TOFIELD)
+	local g=Duel.SelectMatchingCard(tp,s.deck_gemini_filter,tp,LOCATION_DECK,0,1,1,nil)
+	local tc=g:GetFirst()
+	if tc then
+		Duel.MoveToField(tc,tp,tp,LOCATION_SZONE,POS_FACEUP,true)
+		
+		-- Ubah status kartu dari Deck menjadi Continuous Trap
+		local e1=Effect.CreateEffect(c)
+		e1:SetCode(EFFECT_CHANGE_TYPE)
+		e1:SetType(EFFECT_TYPE_SINGLE)
+		e1:SetProperty(EFFECT_FLAG_CANNOT_DISABLE)
+		e1:SetValue(TYPE_TRAP+TYPE_CONTINUOUS)
+		e1:SetReset(RESET_EVENT+RESETS_STANDARD-RESET_TURN_SET)
+		tc:RegisterEffect(e1)
+	end
+end
+
+-- =========================================================
+-- EFEK 2: Efek Gemini (Bounce 2 -> Extra Deck Rip)
+-- =========================================================
+function s.cost_filter(c)
+	return c:IsFaceup() and c:IsType(TYPE_GEMINI) and c:IsAbleToHandAsCost()
+end
+
+function s.geminicost(e,tp,eg,ep,ev,re,r,rp,chk)
+	if chk==0 then return Duel.IsExistingMatchingCard(s.cost_filter,tp,LOCATION_ONFIELD,0,2,nil) end
+	Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_RTOHAND)
+	local g=Duel.SelectMatchingCard(tp,s.cost_filter,tp,LOCATION_ONFIELD,0,2,2,nil)
+	Duel.SendtoHand(g,nil,REASON_COST)
+end
+
+function s.geminitg(e,tp,eg,ep,ev,re,r,rp,chk)
+	if chk==0 then
+		return Duel.GetLocationCount(tp,LOCATION_SZONE)>0
+			and Duel.GetFieldGroupCount(tp,0,LOCATION_EXTRA)>0
+	end
+end
+
+function s.geminiop(e,tp,eg,ep,ev,re,r,rp)
+	if Duel.GetLocationCount(tp,LOCATION_SZONE)<=0 then return end
+	
+	local eg_group=Duel.GetFieldGroup(tp,0,LOCATION_EXTRA)
+	if #eg_group>0 then
+		-- Intip / Lihat Extra Deck Lawan
+		Duel.ConfirmCards(tp,eg_group)
+		
+		-- Pilih 1 Monster dari Extra Deck Lawan yang bisa ditaruh di S/T Zone
+		Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_TOFIELD)
+		local sg=eg_group:FilterSelect(tp,Card.IsMonster,1,1,nil)
+		local tc=sg:GetFirst()
+		
+		if tc then
+			Duel.MoveToField(tc,tp,tp,LOCATION_SZONE,POS_FACEUP,true)
+			
+			-- Ubah tipe monster Extra Deck tersebut menjadi Continuous Trap
+			local e1=Effect.CreateEffect(e:GetHandler())
+			e1:SetCode(EFFECT_CHANGE_TYPE)
+			e1:SetType(EFFECT_TYPE_SINGLE)
+			e1:SetProperty(EFFECT_FLAG_CANNOT_DISABLE)
+			e1:SetValue(TYPE_TRAP+TYPE_CONTINUOUS)
+			e1:SetReset(RESET_EVENT+RESETS_STANDARD-RESET_TURN_SET)
+			tc:RegisterEffect(e1)
+		end
+		
+		-- Sembunyikan kembali sisa Extra Deck lawan
+		Duel.ShuffleExtra(1-tp)
+	end
+end
